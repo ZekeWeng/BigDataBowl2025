@@ -1,11 +1,10 @@
 # BigDataBowl2025
 
 ### Timeline:
-October 15: Challenge Opens \
-November 1: Plan Made \
-November 15: Plan Made \
-December 15: Rough Draft Done \
-January: Challenge Ends
+October 11: Challenge Opens \
+October 25: Plan Made \
+December 1: Rough Draft Done \
+January 6: Challenge Ends
 
 
 ### Todos:
