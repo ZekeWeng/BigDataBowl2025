@@ -1,35 +1,5 @@
 import plotly.graph_objects as go
-import pandas as pd
-
-
-
-
-
-fig = go.Figure( layout_yaxis_range=[0,53.3], layout_xaxis_range=[0,120])
-
-
-games = pd.read_csv("/kaggle/input/nfl-big-data-bowl-2023/games.csv")
-plays = pd.read_csv("/kaggle/input/nfl-big-data-bowl-2023/plays.csv")
-players = pd.read_csv("/kaggle/input/nfl-big-data-bowl-2023/players.csv")
-week1 = pd.read_csv("/kaggle/input/nfl-big-data-bowl-2023/week1.csv")
-pffScoutingData = pd.read_csv("/kaggle/input/nfl-big-data-bowl-2023/pffScoutingData.csv")
-joined_all = pd.merge(games,plays,how="inner",on = "gameId")
-joined_all = pd.merge(joined_all,week1,how="inner",on=["gameId","playId"])
-# left join on players to keep football records
-joined_all = pd.merge(joined_all,players,how="left",on = "nflId")
-play_focus = 97
-focused_df = joined_all[(joined_all.playId==play_focus)]
-
-
-colors = {"TB":'#D50A0A',
-          "DAL":'#003594',
-          "football":'#CBB67C'
-        }
-for team in focused_df.team.unique():
-    plot_df = focused_df[(focused_df.team==team)&(focused_df.frameId==1)]
-    fig.add_trace(go.Scatter(x=plot_df["x"], y=plot_df["y"],mode = 'markers',marker_color=colors[team],name=team))
-fig.show()
-
+import numpy as np
 
 colors = {
     'ARI':"#97233F",
@@ -67,26 +37,27 @@ colors = {
     'football':'#CBB67C'
 }
 
-def animate_play(tracking_df, play_df,players,pffScoutingData, gameId,playId):
-    selected_play_df = play_df[(play_df.playId==playId)&(play_df.gameId==gameId)].copy()
+def animate_play(df):
+    """
+    Animates a specific play
 
-    tracking_players_df = pd.merge(tracking_df,players,how="left",on = "nflId")
-    tracking_players_df = pd.merge(tracking_players_df,pffScoutingData,how="left",on = ["nflId","playId","gameId"])
-    selected_tracking_df = tracking_players_df[(tracking_players_df.playId==playId)&(tracking_players_df.gameId==gameId)].copy()
+    Params:
+    - df: The DataFrame for the specific play
 
-    sorted_frame_list = selected_tracking_df.frameId.unique()
-    sorted_frame_list.sort()
+    Returns:
+    - Visualization of the specific play
+    """
+    # General Information
+    baseline = df.iloc[0]
+    line_of_scrimmage = baseline['absoluteYardlineNumber']
+    first_down_marker = line_of_scrimmage + baseline['yardsToGo']
+    down, quarter, game_clock = baseline['down'], baseline['quarter'], baseline['gameClock']
+    play_description = baseline['playDescription']
 
-    # get play General information
-    line_of_scrimmage = selected_play_df.absoluteYardlineNumber.values[0]
-    first_down_marker = line_of_scrimmage + selected_play_df.yardsToGo.values[0]
-    down = selected_play_df.down.values[0]
-    quarter = selected_play_df.quarter.values[0]
-    gameClock = selected_play_df.gameClock.values[0]
-    playDescription = selected_play_df.playDescription.values[0]
-    # Handle case where we have a really long Play Description and want to split it into two lines
-    if len(playDescription.split(" "))>15 and len(playDescription)>115:
-        playDescription = " ".join(playDescription.split(" ")[0:16]) + "<br>" + " ".join(playDescription.split(" ")[16:])
+    # Handle Long Play Descriptions
+    words = play_description.split(" ")
+    if len(words) > 15 and len(play_description) > 115:
+        play_description = " ".join(words[:16]) + "<br>" + " ".join(words[16:])
 
     # initialize plotly start and stop buttons for animation
     updatemenus_dict = [
@@ -137,6 +108,10 @@ def animate_play(tracking_df, play_df,players,pffScoutingData, gameId,playId):
 
 
     frames = []
+
+    sorted_frame_list = df.frameId.unique()
+    sorted_frame_list.sort()
+
     for frameId in sorted_frame_list:
         data = []
         # Add Numbers to Field
@@ -189,16 +164,25 @@ def animate_play(tracking_df, play_df,players,pffScoutingData, gameId,playId):
             )
         )
         # Plot Players
-        for team in selected_tracking_df.team.unique():
-            plot_df = selected_tracking_df[(selected_tracking_df.team==team)&(selected_tracking_df.frameId==frameId)].copy()
+        for team in df.club.unique():
+            plot_df = df[(df.club==team)&(df.frameId==frameId)].copy()
             if team != "football":
                 hover_text_array=[]
                 for nflId in plot_df.nflId:
                     selected_player_df = plot_df[plot_df.nflId==nflId]
-                    hover_text_array.append("nflId:{}<br>displayName:{}<br>Position:{}<br>Role:{}".format(selected_player_df["nflId"].values[0],
-                                                                                      selected_player_df["displayName"].values[0],
-                                                                                      selected_player_df["pff_positionLinedUp"].values[0],
-                                                                                      selected_player_df["pff_role"].values[0]))
+                    hover_text_array.append("nflId:{}<br>displayName:{}".format(
+                        selected_player_df["nflId"].values[0],
+                        selected_player_df["displayName"].values[0],
+                    ))
+
+                    ### DONT HAVE PFF POSITIONS / ROLES
+                    # hover_text_array.append("nflId:{}<br>displayName:{}<br>Position:{}<br>Role:{}".format(
+                        # selected_player_df["nflId"].values[0],
+                        # selected_player_df["displayName"].values[0],
+                        # selected_player_df["pff_positionLinedUp"].values[0],
+                        # selected_player_df["pff_role"].values[0]
+                    # ))
+
                 data.append(go.Scatter(x=plot_df["x"], y=plot_df["y"],mode = 'markers',marker_color=colors[team],name=team,hovertext=hover_text_array,hoverinfo="text"))
             else:
                 data.append(go.Scatter(x=plot_df["x"], y=plot_df["y"],mode = 'markers',marker_color=colors[team],name=team,hoverinfo='none'))
@@ -224,7 +208,7 @@ def animate_play(tracking_df, play_df,players,pffScoutingData, gameId,playId):
 
         plot_bgcolor='#00B140',
         # Create title and add play description at the bottom of the chart for better visual appeal
-        title=f"GameId: {gameId}, PlayId: {playId}<br>{gameClock} {quarter}Q"+"<br>"*19+f"{playDescription}",
+        title=f"GameId: {df.gameId.unique()[0]}, PlayId: {df.playId.unique()[0]}<br>{game_clock} {quarter}Q"+"<br>"*19+f"{play_description}",
         updatemenus=updatemenus_dict,
         sliders = [sliders_dict]
     )
@@ -255,6 +239,3 @@ def animate_play(tracking_df, play_df,players,pffScoutingData, gameId,playId):
                 )
 
     return fig
-
-
-# animate_play(week1,plays,players,pffScoutingData,2021090900,97).show()
