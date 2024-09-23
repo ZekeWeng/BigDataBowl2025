@@ -2,3 +2,5 @@ kaggle.json
 venv
 data
 test.ipynb
+.DS_Store
+__pycache__
