@@ -2,8 +2,8 @@ import pandas as pd
 import os
 
 # Currently set to 2024
-INPUT_PATH = "data/2024"
-OUTPUT_PATH = "data/2024_processed"
+INPUT_PATH = "data/2024/raw"
+OUTPUT_PATH = "data/2024/processed"
 
 def process_week(week, games, plays, players):
     """
@@ -23,7 +23,7 @@ def process_week(week, games, plays, players):
     games_plays_tracking = pd.merge(games_plays, tracking, how="inner", on=["gameId", "playId"])
     df = pd.merge(games_plays_tracking, players, how="left", on = ["nflId", 'displayName'])
 
-    output_file = f'{OUTPUT_PATH}/weeks/processed_week_{week}.csv'
+    output_file = f'{OUTPUT_PATH}/weeks/week_{week}.csv'
     df.to_csv(output_file, index=False)
     print(f"Processed data for week {week} saved to {output_file}.")
 
@@ -48,8 +48,8 @@ def process_games(df, week):
         game['playId'] = game['playId'].map(playId_mapping)
         game = game.sort_values('playId')
 
-        name = f"{gameId}_{game.iloc[0]['visitorTeamAbbr']}@{game.iloc[0]['homeTeamAbbr']}"
-        output_file = f'{OUTPUT_PATH}/games/week{week}/{name}.csv'
+        name = f"w{week}_{gameId}_{game.iloc[0]['visitorTeamAbbr']}@{game.iloc[0]['homeTeamAbbr']}"
+        output_file = f'{OUTPUT_PATH}/games/{name}.csv'
 
         game.to_csv(output_file, index=False)
         print(f"Processd data for week {week}, game {name} saved to {output_file}.")
@@ -62,7 +62,7 @@ if __name__ == '__main__':
     all_weeks_data = []
 
     # Process each week
-    for week in range(1, 10):
+    for week in range(1, 2): # Only Week 1 for 2024
         week_data = process_week(week, games, plays, players)
         process_games(week_data, week)
         all_weeks_data.append(week_data)
