@@ -2,8 +2,8 @@ import pandas as pd
 import os
 
 # Currently set to 2024
-INPUT_PATH = "data/2024/raw"
-OUTPUT_PATH = "data/2024/processed"
+INPUT_PATH = "data/2025/raw"
+OUTPUT_PATH = "data/2025/processed"
 
 def process_week(week, games, plays, players):
     """
@@ -56,15 +56,23 @@ def process_games(df, week):
 
 
 if __name__ == '__main__':
+    directories = [
+        INPUT_PATH,
+        os.path.join(OUTPUT_PATH, "games"),
+        os.path.join(OUTPUT_PATH, "weeks"),
+    ]
+    for directory in directories:
+        os.makedirs(directory, exist_ok=True)
+
     games = pd.read_csv(os.path.join(INPUT_PATH, "games.csv"))
     plays = pd.read_csv(os.path.join(INPUT_PATH, "plays.csv"))
     players = pd.read_csv(os.path.join(INPUT_PATH, "players.csv"))
     all_weeks_data = []
 
     # Process each week
-    for week in range(1, 2): # Only Week 1 for 2024
+    for week in range(1, 10):
         week_data = process_week(week, games, plays, players)
-        process_games(week_data, week)
+        # process_games(week_data, week)
         all_weeks_data.append(week_data)
 
     # Combine all weeks
