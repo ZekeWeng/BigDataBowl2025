@@ -16,35 +16,20 @@ pip install -r requirements.txt
 python preprocessing.py
 ```
 
+### Actionables Oct 12
+1) Data preprocessing (Zeke)
+   a) Merging player_play into full data
+   b) Add some of those columns into visualizations
+   c) Are there obvious patterns where offense / defense is advantages? Matching Offense + Defense
 
-### Timeline:
-October 11: Challenge Opens \
-October 25: Plan Made \
-December 1: Rough Draft Done \
-January 6: Challenge Ends
+2) Distance (Victor)
+   a) How does distance traveled by offense AND/OR defense affect yards gained? (Split this up for run and pass plays)
+      CAVEAT - Set then motion (not just going to the line of scrimmage)
+      i) Offensive distance traveled =>
+      ii) Defensive distance traveled =>
+      iii) Some Formula for mixing them =>
 
-
-### Todos:
-Visualizations
- - Frankenstein Viz
- - Toggles
-    - See Numbers
-    - Offense Only
-    - Defense Only
-    - Vertical (rotation of the field cuz currently horizontal)
- - Change The Color
- - Increase the field width to look better
-
-
-Creating VENV
-
-deactivate  # First, deactivate the virtual environment
-rm -rf venv  # Be cautious with rm -rf
-python3 -m venv venv  # Create a new virtual environment
-source venv/bin/activate  # Activate the new environment
-
-
-
-pip freeze > requirements.txt
-
-pip uninstall package_name
+3) Does motion help offense at all? (Justin + Cayden)
+   a) Label types of motion + type of player in motion
+   b) Players + Positions + Type of Motion Frequencies
+   c) How do these labels affect play result? (yards gained)
