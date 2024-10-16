@@ -61,7 +61,8 @@ def getColorSimilarity(hex1, hex2):
     """
     def get_rgb(color):
         """Converts a hex color to an RGB tuple."""
-        return np.array(tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)))
+        # return np.array(tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)))
+        return tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
 
     if hex1 == hex2:
         return 0
@@ -80,32 +81,32 @@ def getColorSimilarity(hex1, hex2):
     return distance
 
 
-def getColorPairs(team1, team2):
+def getColorPairs(teamA, teamB):
     """
-    Pairs colors for two teams. If colors are 'too close' in hue, switch to alt color.
+    Pairs colors for two teams. If colors are 'too close' in hue, switch to alt
+    color.
 
     Params:
     - team1: Name of the first team.
     - team2: Name of the second team.
-    - colors: Dictionary with team names as keys and arrays of color hex codes as values.
 
     Returns:
     - Dictionary with color assignments for both teams and football.
     """
-    color_array_1 = colors[team1]
-    color_array_2 = colors[team2]
+    teamA_colors = colors[teamA]
+    teamB_colors = colors[teamB]
 
     # If color distance is small, switch secondary color for team2
-    if getColorSimilarity(color_array_1[0], color_array_2[0]) < 500:
+    if getColorSimilarity(teamA_colors[0], teamB_colors[0]) < 500:
         return {
-            team1: [color_array_1[0], color_array_1[1]],
-            team2: [color_array_2[1], color_array_2[0]],
+            teamA: [teamA_colors[0], teamA_colors[1]],
+            teamB: [teamB_colors[1], teamB_colors[0]],
             'football': colors['football']
         }
     else:
         return {
-            team1: [color_array_1[0], color_array_1[1]],
-            team2: [color_array_2[0], color_array_2[1]],
+            teamA: [teamA_colors[0], teamA_colors[1]],
+            teamB: [teamB_colors[0], teamB_colors[1]],
             'football': colors['football']
         }
 
@@ -124,11 +125,11 @@ def animate_play(df):
     sorted_frame_list = df.frameId.unique()
     sorted_frame_list.sort()
 
-    # Get Color Combos
+    # Get color Combos
     team_combos = list(set(df['club'].unique())-set(['football']))
     color_orders = getColorPairs(team_combos[0],team_combos[1])
 
-    # Get General information
+    # Get general information
     line_of_scrimmage = df['absoluteYardlineNumber'].values[0]
 
     # Get First Down Marker
@@ -141,23 +142,25 @@ def animate_play(df):
     gameClock = df['gameClock'].values[0]
     playDescription = df['playDescription'].values[0]
 
-    # Handle case where we have a really long Play Description and want to split it into two lines
+    # Handle long play descriptions
     if len(playDescription.split(" "))>15 and len(playDescription)>115:
-        playDescription = " ".join(playDescription.split(" ")[0:16]) + "<br>" + " ".join(playDescription.split(" ")[16:])
+        playDescription = " ".join(playDescription.split(" ")[0:16]) + "<br>"
+        + " ".join(playDescription.split(" ")[16:])
 
     updatemenus_dict = [
         {
             "buttons": [
                 {
-                    "args": [None, {"frame": {"duration": 100, "redraw": False},
-                                "fromcurrent": True, "transition": {"duration": 0}}],
+                    "args": [
+                        None, {"frame": {"duration": 100, "redraw": False},
+                        "fromcurrent": True, "transition": {"duration": 0}}],
                     "label": "Play",
                     "method": "animate"
                 },
                 {
-                    "args": [[None], {"frame": {"duration": 0, "redraw": False},
-                                      "mode": "immediate",
-                                      "transition": {"duration": 0}}],
+                    "args": [
+                        [None], {"frame": {"duration": 0, "redraw": False},
+                        "mode": "immediate", "transition": {"duration": 0}}],
                     "label": "Pause",
                     "method": "animate"
                 }
@@ -194,36 +197,37 @@ def animate_play(df):
 
     for frameId in sorted_frame_list:
         data = []
+
         # Add Numbers to Field
+        data.append(
+            go.Scatter(
+                x=np.arange(20, 110, 10),
+                y=[5] * len(np.arange(20, 110, 10)),
+                mode='text',
+                text=[str(i) for i in list(np.arange(10, 61, 10))
+                      + list(np.arange(40, 9, -10))],
+                textfont_size=30,
+                textfont_family="Courier New, monospace",
+                textfont_color="#ffffff",
+                showlegend=False,
+                hoverinfo='none'
+            )
+        )
+        data.append(
+            go.Scatter(
+                x=np.arange(20, 110, 10),  # Generate x values once
+                y=[53.5 - 5] * len(np.arange(20, 110, 10)),  # Calculate y value and repeat it based on x's length
+                mode='text',
+                text=[str(i) for i in list(np.arange(10, 61, 10)) + list(np.arange(40, 9, -10))],  # Simplified text generation
+                textfont_size=30,
+                textfont_family="Courier New, monospace",
+                textfont_color="#ffffff",
+                showlegend=False,
+                hoverinfo='none'
+            )
+        )
 
-        data.append(
-          go.Scatter(
-              x=np.arange(20,110,10),
-              y=[5]*len(np.arange(20,110,10)),
-              mode='text',
-              text=list(map(str,list(np.arange(20, 61, 10)-10)+list(np.arange(40, 9, -10)))),
-              textfont_size = 30,
-              textfont_family = "Courier New, monospace",
-              textfont_color = "#ffffff",
-              showlegend=False,
-              hoverinfo='none'
-          )
-        )
-        data.append(
-          go.Scatter(
-              x=np.arange(20,110,10),
-              y=[53.5-5]*len(np.arange(20,110,10)),
-              mode='text',
-              text=list(map(str,list(np.arange(20, 61, 10)-10)+list(np.arange(40, 9, -10)))),
-              textfont_size = 30,
-              textfont_family = "Courier New, monospace",
-              textfont_color = "#ffffff",
-              showlegend=False,
-              hoverinfo='none'
-          )
-        )
         # Add line of scrimage
-
         data.append(
           go.Scatter(
               x=[line_of_scrimmage,line_of_scrimmage],
@@ -234,8 +238,8 @@ def animate_play(df):
               hoverinfo='none'
           )
         )
-        # Add First down line
 
+        # Add First down line
         data.append(
           go.Scatter(
               x=[first_down_marker,first_down_marker],
@@ -246,8 +250,8 @@ def animate_play(df):
               hoverinfo='none'
           )
         )
-        # Add Endzone Colors
 
+        # Add Endzone Colors
         endzoneColors = {0:color_orders[df['homeTeamAbbr'].values[0]][0],
                         110:color_orders[df['visitorTeamAbbr'].values[0]][0]}
         for x_min in [0,110]:
@@ -270,7 +274,8 @@ def animate_play(df):
 
         # Plot Players
         for team in df['club'].unique():
-            plot_df = df.loc[(df['club']==team) & (df['frameId']==frameId)].copy()
+            plot_df = df.loc[(df['club']==team)
+                             & (df['frameId']==frameId)].copy()
 
             if team != 'football':
                 hover_text_array=[]
@@ -284,21 +289,25 @@ def animate_play(df):
                     hover_text_array.append(text_to_append)
 
                 data.append(go.Scatter(x=plot_df['x'], y=plot_df['y'],
-                                      mode = 'markers',
-                                      marker=go.scatter.Marker(color=color_orders[team][0],
-                                                              line=go.scatter.marker.Line(width=2,
-                                                                                          color=color_orders[team][1]),
-                                                              size=10),
-                                      name=team,hovertext=hover_text_array,hoverinfo='text'))
+                                mode = 'markers',
+                                marker=go.scatter.Marker(
+                                    color=color_orders[team][0],
+                                    line=go.scatter.marker.Line(width=2,
+                                    color=color_orders[team][1]),
+                                    size=10
+                                    ),
+                                name= team, hovertext=hover_text_array, hoverinfo='text'))
             else:
                 data.append(go.Scatter(x=plot_df['x'], y=plot_df['y'],
-                                      mode = 'markers',
-                                      marker=go.scatter.Marker(
-                                        color=color_orders[team][0],
-                                        line=go.scatter.marker.Line(width=2,
-                                                                    color=color_orders[team][1]),
-                                        size=10),
-                                      name=team,hoverinfo='none'))
+                                mode = 'markers',
+                                marker=go.scatter.Marker(
+                                    color=color_orders[team][0],
+                                    line=go.scatter.marker.Line(
+                                    width=2,
+                                    color=color_orders[team][1]),
+                                    size=10
+                                    ),
+                                name=team,hoverinfo='none'))
 
         # Add frame to slider
         slider_step = {'args': [
@@ -316,12 +325,18 @@ def animate_play(df):
         autosize=False,
         width=120*scale,
         height=60*scale,
-        xaxis=dict(range=[0, 120], autorange=False, tickmode='array',tickvals=np.arange(10, 111, 5).tolist(),showticklabels=False),
-        yaxis=dict(range=[0, 53.3], autorange=False,showgrid=False,showticklabels=False),
+        xaxis=dict(range=[0, 120], autorange=False, tickmode='array',
+                   tickvals=np.arange(10, 111, 5).tolist(),
+                   showticklabels=False
+                   ),
+        yaxis=dict(range=[0, 53.3], autorange=False,
+                   showgrid=False,showticklabels=False
+                   ),
 
         plot_bgcolor='#00B140',
-        # Create title and add play description at the bottom of the chart for better visual appeal
-        title=f"GameId: {df.iloc[0].gameId}, PlayId: {df.iloc[0].playId}<br>{gameClock} {quarter}Q"+"<br>"*19+f"{playDescription}",
+
+        # Create title and add play description
+        title=f"GameId: {df.iloc[0].gameId},PlayId: {df.iloc[0].playId}<br>{gameClock}{quarter}Q"+"<br>"*19+f"{playDescription}",
         updatemenus=updatemenus_dict,
         sliders = [sliders_dict]
     )
