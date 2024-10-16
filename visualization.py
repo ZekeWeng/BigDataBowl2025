@@ -144,8 +144,7 @@ def animate_play(df):
 
     # Handle long play descriptions
     if len(playDescription.split(" "))>15 and len(playDescription)>115:
-        playDescription = " ".join(playDescription.split(" ")[0:16]) + "<br>"
-        + " ".join(playDescription.split(" ")[16:])
+        playDescription = " ".join(playDescription.split(" ")[0:16]) + "<br>" + " ".join(playDescription.split(" ")[16:])
 
     updatemenus_dict = [
         {
