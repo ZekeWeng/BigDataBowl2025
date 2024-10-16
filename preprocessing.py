@@ -5,7 +5,7 @@ import os
 INPUT_PATH = "data/2025/raw"
 OUTPUT_PATH = "data/2025/processed"
 
-def process_week(week, games, plays, players):
+def process_week(week, games, plays, players, player_play):
     """
     Process the tracking data for a specific week.
 
@@ -21,7 +21,8 @@ def process_week(week, games, plays, players):
     tracking = pd.read_csv(os.path.join(INPUT_PATH, f"tracking_week_{week}.csv"))
     games_plays = pd.merge(games[games.week == week], plays, how="inner", on="gameId")
     games_plays_tracking = pd.merge(games_plays, tracking, how="inner", on=["gameId", "playId"])
-    df = pd.merge(games_plays_tracking, players, how="left", on = ["nflId", 'displayName'])
+    games_plays_tracking_playerplays = pd.merge(games_plays_tracking, player_play, how="left", on = ["gameId", 'playId', 'nflId'])
+    df = pd.merge(games_plays_tracking_playerplays, players, how="left", on = ["nflId", 'displayName'])
 
     output_file = f'{OUTPUT_PATH}/weeks/week_{week}.csv'
     df.to_csv(output_file, index=False)
@@ -67,16 +68,17 @@ if __name__ == '__main__':
     games = pd.read_csv(os.path.join(INPUT_PATH, "games.csv"))
     plays = pd.read_csv(os.path.join(INPUT_PATH, "plays.csv"))
     players = pd.read_csv(os.path.join(INPUT_PATH, "players.csv"))
+    player_play = pd.read_csv(os.path.join(INPUT_PATH, "player_play.csv"))
     all_weeks_data = []
 
     # Process each week
-    for week in range(1, 10):
-        week_data = process_week(week, games, plays, players)
-        # process_games(week_data, week)
+    for week in range(1, 2):
+        week_data = process_week(week, games, plays, players, player_play)
+        process_games(week_data, week)
         all_weeks_data.append(week_data)
 
     # Combine all weeks
-    df = pd.concat(all_weeks_data, ignore_index=True)
-    output_file = f'{OUTPUT_PATH}/processed_weeks.csv'
-    df.to_csv(output_file, index=False)
-    print(f"All weeks data combined and saved to {output_file}.")
+    # df = pd.concat(all_weeks_data, ignore_index=True)
+    # output_file = f'{OUTPUT_PATH}/processed_weeks.csv'
+    # df.to_csv(output_file, index=False)
+    # print(f"All weeks data combined and saved to {output_file}.")
