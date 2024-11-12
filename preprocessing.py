@@ -1,121 +1,146 @@
-import pandas as pd
-import os
+import argparse
 import CONSTANTS
+import polars as pl
 
+def preprocess(df_tracking):
+    df = df_tracking.with_columns([
+        (pl.col('club') == pl.col('possessionTeam')).alias('is_on_offense'),
+        (pl.col('club') == pl.col('defensiveTeam')).alias('is_on_defense')
+    ])
+    return df
 
-def preprocess_plays(df):
-    df['playId'] = df.groupby('gameId')['playId'].rank(method='dense').astype(int)
-    df['Id'] = df['gameId'].astype(str) + '_' + df['playId'].astype(str)
-
-    df['penaltyYards'].fillna(0).astype(int)
-    df['qbSpike'] = df['qbSpike'].fillna(0).astype('bool')
-    df['qbKneel'] = df['qbKneel'].astype(bool)
-    return df.loc[~(df['qbSpike']) & ~(df['qbKneel'])].copy()
-
-
-def preprocess_player_play(df):
-    df['playId'] = df.groupby('gameId')['playId'].rank(method='dense').astype(int)
-    df['Id'] = df['gameId'].astype(str) + '_' + df['playId'].astype(str)
-    df.rename(columns={"penalty_yards": "player_penalty_yards"})
-    return df.copy()
-
-
-def preprocess_tracking_helper(tracking):
-    tracking.loc[tracking['playDirection'] == 'left', 'x'] = 120 - tracking.loc[tracking['playDirection'] == 'left', 'x']
-    tracking.loc[tracking['playDirection'] == 'left', 'y'] = (160/3) - tracking.loc[tracking['playDirection'] == 'left', 'y']
-    tracking.loc[tracking['playDirection'] == 'left', 'dir'] += 180
-    tracking.loc[tracking['dir'] > 360, 'dir'] -= 360
-    tracking.loc[tracking['playDirection'] == 'left', 'o'] += 180
-    tracking.loc[tracking['o'] > 360, 'o'] -= 360
-
-    tracking['playId'] = tracking.groupby('gameId')['playId'].rank(method='dense').astype(int)
-    tracking['Id'] = tracking['gameId'].astype(str) + '_' + tracking['playId'].astype(str)
-
-    tracking.sort_values(['gameId', 'playId', 'frameId', 'club']).reset_index(drop=True)
-    return tracking
-
-
-def preprocess_presnap(df):
-    line_set_frames = (
-        df[df['event'] == 'line_set'].groupby(['gameId', 'playId'])['frameId']
-        .min().reset_index()
-        .rename(columns={'frameId': 'frameId_line_set'})
+def preprocess_plays(df_plays, df_player_play):
+    df = df_plays.join(
+      df_player_play,
+      on=['gameId', 'playId'],
+      how='left'
     )
 
-    snap_frames = (
-        df[df['frameType'] == 'SNAP'].groupby(['gameId', 'playId'])['frameId']
-        .min().reset_index()
-        .rename(columns={'frameId': 'frameId_snap'})
-    )
+    df = df.with_columns([
+        pl.col('playId')
+        .rank(method='dense')
+        .over('gameId')
+        .cast(pl.Int32)
+        .alias('playId'),
+    ])
+    df = df.with_columns([
+        (pl.col('gameId').cast(pl.Utf8) + '_' + pl.col('playId').cast(pl.Utf8)).alias('Id')
+    ])
 
-    # Identify 'line_set' and 'SNAP'
-    valid_frames = pd.merge(
-        line_set_frames, snap_frames,
-        on=['gameId', 'playId'],
-        how='inner'
-    )
-
-    valid_frames = valid_frames[valid_frames['frameId_line_set'] <= valid_frames['frameId_snap']]
-
-    df = pd.merge(
-        df, valid_frames,
-        on=['gameId', 'playId'],
-        how='inner'
-    )
-
-    # Filter for presnap + postlineset
-    df = df[
-        (df['frameId'] >= df['frameId_line_set']) &
-        (df['frameId'] <= df['frameId_snap'])
-    ].copy()
-
-    df.drop(['frameId_line_set', 'frameId_snap'], axis=1, inplace=True)
-    df.sort_values(['gameId', 'playId', 'frameId', 'club', 'nflId']).reset_index(drop=True)
+    df = df.sort(['gameId', 'playId'])
 
     return df
 
+def preprocess_tracking(df_tracking):
+    df = df_tracking.with_columns([
+        pl.col('playId')
+        .rank(method='dense')
+        .over('gameId')
+        .cast(pl.Int32)
+        .alias('playId'),
+    ])
 
-def preprocess(tracking_with_plays):
-    tracking_with_plays['is_on_offense'] = tracking_with_plays['club'] == tracking_with_plays['possessionTeam']
-    tracking_with_plays['is_on_defense'] = tracking_with_plays['club'] == tracking_with_plays['defensiveTeam']
-    return tracking_with_plays
+    df = df.with_columns([
+        (pl.col('gameId').cast(pl.Utf8) + '_' + pl.col('playId').cast(pl.Utf8)).alias('Id')
+    ])
 
+    df = df.with_columns([
+        pl.when(pl.col('playDirection') == 'left')
+          .then(120 - pl.col('x'))
+          .otherwise(pl.col('x'))
+          .alias('x'),
+        pl.when(pl.col('playDirection') == 'left')
+          .then((160 / 3) - pl.col('y'))
+          .otherwise(pl.col('y'))
+          .alias('y'),
+        pl.when(pl.col('playDirection') == 'left')
+          .then((pl.col('dir') + 180) % 360)
+          .otherwise(pl.col('dir'))
+          .alias('dir'),
+        pl.when(pl.col('playDirection') == 'left')
+          .then((pl.col('o') + 180) % 360)
+          .otherwise(pl.col('o'))
+          .alias('o'),
+    ])
 
-def preprocess_tracking(presnap=False):
-    tracking = []
-    for week in range(1, 10):
-        TRACKING = pd.read_csv(f"data/2025/raw/tracking_week_{week}.csv")
-        tracking_week = preprocess_tracking_helper(TRACKING)
-        if presnap:
-            tracking_week = preprocess_presnap(tracking_week)
-        tracking.append(tracking_week)
+    df = df.sort(['gameId', 'playId', 'frameId', 'club'])
+    return df
 
-    return pd.concat(tracking, axis=0, ignore_index=True)
+def preprocess_presnap(df):
+    line_set_frames = (
+        df.filter(pl.col('event') == 'line_set')
+          .group_by(['gameId', 'playId'])
+          .agg([pl.col('frameId').min().alias('frameId_line_set')])
+    )
 
+    snap_frames = (
+        df.filter(pl.col('frameType') == 'SNAP')
+          .group_by(['gameId', 'playId'])
+          .agg([pl.col('frameId').min().alias('frameId_snap')])
+    )
 
-if __name__ == '__main__':
-    # Load Data
-    GAMES = pd.read_csv(CONSTANTS.GAMES)
-    PLAYERS = pd.read_csv(CONSTANTS.PLAYERS, usecols=CONSTANTS.PRESNAP_PLAYERS_COLS)
-    PLAYS = pd.read_csv(CONSTANTS.PLAYS, usecols=CONSTANTS.PRESNAP_PLAYS_COLS)
-    PLAYER_PLAY = pd.read_csv(CONSTANTS.PLAYER_PLAY, usecols=CONSTANTS.PRESNAP_PLAYER_PLAY_COLS)
-    print("Finished Loading Data")
+    valid_frames = line_set_frames.join(snap_frames, on=['gameId', 'playId'], how='inner')
+    valid_frames = valid_frames.filter(pl.col('frameId_line_set') <= pl.col('frameId_snap'))
 
-    # Preprocess
-    plays = preprocess_plays(PLAYS)
-    player_play = preprocess_player_play(PLAYER_PLAY)
-    tracking = preprocess_tracking()
-    print("Finished Preprocessing Data")
+    df = df.join(valid_frames, on=['gameId', 'playId'], how='inner')
+    df = df.filter(
+        (pl.col('frameId') >= pl.col('frameId_line_set')) &
+        (pl.col('frameId') <= pl.col('frameId_snap'))
+    )
 
-    # Merge Data
-    plays_with_players = pd.merge(plays, player_play, how="left", on=['Id','gameId', 'playId'])
-    tracking_with_plays = pd.merge(tracking, plays_with_players, on=['Id', 'nflId', 'gameId', 'playId'], how='left')
-    df = preprocess(tracking_with_plays)
-    df = pd.merge(df, GAMES, how="left", on=['gameId'])
-    df = pd.merge(df, PLAYERS, how="left", on=['nflId', 'displayName'])
-    print("Finished Merging Data")
+    df = df.drop(['frameId_line_set', 'frameId_snap'])
+    df = df.sort(['gameId', 'playId', 'frameId', 'club', 'nflId'])
 
-    output_file = f'{CONSTANTS.OUTPUT_PATH}/processed_1-5.csv'
-    df.to_csv(output_file, index=False)
-    print("Finished Preprocesssing")
+    return df
 
+if __name__ == "__main__":
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Process football tracking data.")
+    parser.add_argument('--process', action='store_true', help="Process the main 'processed' data")
+    parser.add_argument('--presnap', action='store_true', help="Process the 'presnap' data")
+    args = parser.parse_args()
+
+    # Load data
+    games = pl.read_csv(CONSTANTS.GAMES)
+    players = pl.read_csv(CONSTANTS.PLAYERS)
+    plays = pl.read_csv(CONSTANTS.PLAYS, null_values=["NA"])
+    player_play = pl.read_csv(CONSTANTS.PLAYER_PLAY)
+
+    plays_with_player_play = preprocess_plays(plays, player_play)
+
+    if args.process:
+        processed = []
+        for week in range(1, 10):
+            tracking = pl.read_csv(f"{CONSTANTS.INPUT}/tracking_week_{week}.csv", null_values=["NA"])
+            tracking = preprocess_tracking(tracking)
+
+            processed_week = tracking.join(plays_with_player_play, on=['Id', 'nflId', 'gameId', 'playId'], how='left')
+            processed_week = (
+                processed_week
+                .join(games, on=['gameId'], how='left')
+                .join(players, on=['nflId', 'displayName'], how='left')
+            )
+            processed.append(processed_week)
+
+        df_processed = pl.concat(processed)
+        df_processed = df_processed.filter(pl.col('yardsGained').is_not_null())
+        df_processed.write_csv(f"{CONSTANTS.OUTPUT}/processed.csv")
+
+    if args.presnap:
+        presnap = []
+        for week in range(1, 10):
+            tracking = pl.read_csv(f"{CONSTANTS.INPUT}/tracking_week_{week}.csv", null_values=["NA"])
+            tracking = preprocess_tracking(tracking)
+            presnap_tracking = preprocess_presnap(tracking)
+
+            presnap_week = presnap_tracking.join(plays_with_player_play, on=['Id', 'nflId', 'gameId', 'playId'], how='left')
+            presnap_week = (
+                presnap_week
+                .join(games, on=['gameId'], how='left')
+                .join(players, on=['nflId', 'displayName'], how='left')
+            )
+            presnap.append(presnap_week)
+
+        df_presnap = pl.concat(presnap)
+        df_presnap = df_presnap.filter(pl.col('yardsGained').is_not_null())
+        df_presnap.write_csv(f"{CONSTANTS.OUTPUT}/presnap.csv")
