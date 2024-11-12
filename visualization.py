@@ -1,6 +1,3 @@
-import plotly.graph_objects as go
-import numpy as np
-
 """
 Acknowledgment:
 This implementation is based on the original work by Nick Wan.
@@ -10,8 +7,11 @@ Modifications have been made to adapt the code to meet specific project requirem
 Original source: https://www.kaggle.com/code/nickwan/animate-plays-with-plotly-real-no-lies-here
 """
 
+import plotly.graph_objects as go
+import numpy as np
 
-colors = {
+
+COLORS = {
     'ARI':["#97233F","#000000","#FFB612"],
     'ATL':["#A71930","#000000","#A5ACAF"],
     'BAL':["#241773","#000000"],
@@ -48,19 +48,21 @@ colors = {
 }
 
 
+"""
+Computes the distance between two colors in RGB space.
+
+Params:
+- hex1: The hex code of the first color.
+- hex2: The hex code of the second color.
+
+Returns:
+- The color distance between the two colors.
+"""
 def getColorSimilarity(hex1, hex2):
     """
-    Computes the distance between two colors in RGB space.
-
-    Params:
-    - hex1: The hex code of the first color.
-    - hex2: The hex code of the second color.
-
-    Returns:
-    - The color distance between the two colors.
+    Helper Method: Converts a hex color to an RGB tuple.
     """
     def get_rgb(color):
-        """Converts a hex color to an RGB tuple."""
         # return np.array(tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)))
         return tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
 
@@ -81,46 +83,45 @@ def getColorSimilarity(hex1, hex2):
     return distance
 
 
+"""
+Pairs colors for two teams. If colors are 'too close' in hue, switch to alt
+color.
+
+Params:
+- team1: Name of the first team.
+- team2: Name of the second team.
+
+Returns:
+- Dictionary with color assignments for both teams and football.
+"""
 def getColorPairs(teamA, teamB):
-    """
-    Pairs colors for two teams. If colors are 'too close' in hue, switch to alt
-    color.
-
-    Params:
-    - team1: Name of the first team.
-    - team2: Name of the second team.
-
-    Returns:
-    - Dictionary with color assignments for both teams and football.
-    """
-    teamA_colors = colors[teamA]
-    teamB_colors = colors[teamB]
+    teamA_colors = COLORS[teamA]
+    teamB_colors = COLORS[teamB]
 
     # If color distance is small, switch secondary color for team2
     if getColorSimilarity(teamA_colors[0], teamB_colors[0]) < 500:
         return {
             teamA: [teamA_colors[0], teamA_colors[1]],
             teamB: [teamB_colors[1], teamB_colors[0]],
-            'football': colors['football']
+            'football': COLORS['football']
         }
     else:
         return {
             teamA: [teamA_colors[0], teamA_colors[1]],
             teamB: [teamB_colors[0], teamB_colors[1]],
-            'football': colors['football']
+            'football': COLORS['football']
         }
 
+"""
+Animates a specific play
 
+Params:
+- df: The DataFrame for the specific play
+
+Returns:
+- Visualization of the specific play
+"""
 def animate_play(df):
-    """
-    Animates a specific play
-
-    Params:
-    - df: The DataFrame for the specific play
-
-    Returns:
-    - Visualization of the specific play
-    """
     frames = []
     sorted_frame_list = df.frameId.unique()
     sorted_frame_list.sort()

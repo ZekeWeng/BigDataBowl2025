@@ -49,6 +49,7 @@ python preprocessing.py
    a) Relook at the playDirection for yards gained
    b) Visualization
    c) Feature Engineering => Man/Zone
+   d) Normalize the number of Frames to add
 
 2) Feature
    a) Feature Engineering => Run/Pass
@@ -57,3 +58,4 @@ python preprocessing.py
    a) Label types of motion + type of player in motion
    b) Players + Positions + Type of Motion Frequencies
    c) How do these labels affect play result? (yards gained)
+
