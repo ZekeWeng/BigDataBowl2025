@@ -1,146 +1,193 @@
-import argparse
-import CONSTANTS
+# PREPROCESSING
 import polars as pl
+import math
 
-def preprocess(df_tracking):
-    df = df_tracking.with_columns([
-        (pl.col('club') == pl.col('possessionTeam')).alias('is_on_offense'),
-        (pl.col('club') == pl.col('defensiveTeam')).alias('is_on_defense')
-    ])
-    return df
+def preprocess_games(df):
+    return df.drop(['gameDate', 'gameTimeEastern'])
 
-def preprocess_plays(df_plays, df_player_play):
-    df = df_plays.join(
-      df_player_play,
-      on=['gameId', 'playId'],
-      how='left'
-    )
+def preprocess_players(df):
+    return df.drop(['birthDate', 'collegeName', 'displayName'])
 
-    df = df.with_columns([
+def preprocess_plays(df):
+    df = df.with_columns(
         pl.col('playId')
         .rank(method='dense')
         .over('gameId')
         .cast(pl.Int32)
-        .alias('playId'),
-    ])
-    df = df.with_columns([
-        (pl.col('gameId').cast(pl.Utf8) + '_' + pl.col('playId').cast(pl.Utf8)).alias('Id')
-    ])
+        .alias('playId')
+    )
 
-    df = df.sort(['gameId', 'playId'])
+    columns_to_drop = [
+        'yardlineSide', 'yardlineNumber',
+        'preSnapHomeScore', 'preSnapVisitorScore',
+        'playNullifiedByPenalty',
+        'preSnapHomeTeamWinProbability', 'preSnapVisitorTeamWinProbability',
+        'dropbackDistance', 'timeToThrow', 'timeInTackleBox', 'timeToSack',
+        'passTippedAtLine', 'unblockedPressure',
+        'penaltyYards', 'prePenaltyYardsGained', 'qbSpike',
+        'qbKneel', 'qbSneak'
+    ]
+    df = df.filter(pl.col("qbKneel") != True)
+    df = df.drop(columns_to_drop)
+    df = df.filter(~pl.col("pff_passCoverage").is_null())
+    return df.sort(['gameId', 'playId'])
 
-    return df
-
-def preprocess_tracking(df_tracking):
-    df = df_tracking.with_columns([
+def preprocess_player_play(df):
+    df = df.with_columns(
         pl.col('playId')
         .rank(method='dense')
         .over('gameId')
         .cast(pl.Int32)
-        .alias('playId'),
+        .alias('playId')
+    )
+
+    columns_to_keep = [
+        "gameId", "playId", "nflId", "rushingYards", "passingYards", "receivingYards",
+        "inMotionAtBallSnap", "shiftSinceLineset", "motionSinceLineset",
+        "wasRunningRoute", "routeRan",
+        "pff_defensiveCoverageAssignment",
+        "pff_primaryDefensiveCoverageMatchupNflId",
+        "pff_secondaryDefensiveCoverageMatchupNflId"
+    ]
+    df = df.select(columns_to_keep)
+    return df.sort(['gameId', 'playId'])
+
+def preprocessing_tracking(df):
+    df = df.with_columns(
+        pl.col('playId')
+        .rank(method='dense')
+        .over('gameId')
+        .cast(pl.Int32)
+        .alias('playId')
+    )
+    df = df.with_columns([
+        pl.when(pl.col('playDirection') == 'left')
+        .then(120 - pl.col('x'))
+        .otherwise(pl.col('x'))
+        .alias('x'),
+        pl.when(pl.col('playDirection') == 'left')
+        .then((160 / 3) - pl.col('y'))
+        .otherwise(pl.col('y'))
+        .alias('y'),
+        pl.when(pl.col('playDirection') == 'left')
+        .then((pl.col('dir') + 180) % 360)
+        .otherwise(pl.col('dir'))
+        .alias('dir'),
+        pl.when(pl.col('playDirection') == 'left')
+        .then((pl.col('o') + 180) % 360)
+        .otherwise(pl.col('o'))
+        .alias('o'),
     ])
 
     df = df.with_columns([
-        (pl.col('gameId').cast(pl.Utf8) + '_' + pl.col('playId').cast(pl.Utf8)).alias('Id')
+        ((pl.col('dir').cast(float) * math.pi / 180).cos() * pl.col('s')).alias('xs'),
+        ((pl.col('dir').cast(float) * math.pi / 180).sin() * pl.col('s')).alias('ys')
     ])
-
     df = df.with_columns([
-        pl.when(pl.col('playDirection') == 'left')
-          .then(120 - pl.col('x'))
-          .otherwise(pl.col('x'))
-          .alias('x'),
-        pl.when(pl.col('playDirection') == 'left')
-          .then((160 / 3) - pl.col('y'))
-          .otherwise(pl.col('y'))
-          .alias('y'),
-        pl.when(pl.col('playDirection') == 'left')
-          .then((pl.col('dir') + 180) % 360)
-          .otherwise(pl.col('dir'))
-          .alias('dir'),
-        pl.when(pl.col('playDirection') == 'left')
-          .then((pl.col('o') + 180) % 360)
-          .otherwise(pl.col('o'))
-          .alias('o'),
+        pl.col("o").fill_null(0),
+        pl.col("dir").fill_null(0),
+        pl.col("xs").fill_null(0),
+        pl.col("ys").fill_null(0),
     ])
+    return df.sort(['gameId', 'playId', 'club', 'frameId'])
 
-    df = df.sort(['gameId', 'playId', 'frameId', 'club'])
-    return df
-
-def preprocess_presnap(df):
-    line_set_frames = (
-        df.filter(pl.col('event') == 'line_set')
-          .group_by(['gameId', 'playId'])
-          .agg([pl.col('frameId').min().alias('frameId_line_set')])
+def get_presnap(df):
+    return (
+        df.filter(pl.col("frameType") == "BEFORE_SNAP")
     )
-
-    snap_frames = (
-        df.filter(pl.col('frameType') == 'SNAP')
-          .group_by(['gameId', 'playId'])
-          .agg([pl.col('frameId').min().alias('frameId_snap')])
-    )
-
-    valid_frames = line_set_frames.join(snap_frames, on=['gameId', 'playId'], how='inner')
-    valid_frames = valid_frames.filter(pl.col('frameId_line_set') <= pl.col('frameId_snap'))
-
-    df = df.join(valid_frames, on=['gameId', 'playId'], how='inner')
-    df = df.filter(
-        (pl.col('frameId') >= pl.col('frameId_line_set')) &
-        (pl.col('frameId') <= pl.col('frameId_snap'))
-    )
-
-    df = df.drop(['frameId_line_set', 'frameId_snap'])
-    df = df.sort(['gameId', 'playId', 'frameId', 'club', 'nflId'])
-
-    return df
 
 if __name__ == "__main__":
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(description="Process football tracking data.")
-    parser.add_argument('--process', action='store_true', help="Process the main 'processed' data")
-    parser.add_argument('--presnap', action='store_true', help="Process the 'presnap' data")
+    import torch
+    import math
+    import argparse
+    import polars as pl
+    import numpy as np
+
+    parser = argparse.ArgumentParser(description="Process football tracking data")
+    parser.add_argument('--raw', action='store_true', help="Process data")
+    parser.add_argument('--presnap', action='store_true', help="Process presnap data")
+    parser.add_argument('--raw_OD', action='store_true', help="Process tensors")
+    parser.add_argument('--presnap_OD', action='store_true', help="Process presnap data")
+    parser.add_argument('--tensors', action='store_true', help="Process tensors")
     args = parser.parse_args()
 
-    # Load data
-    games = pl.read_csv(CONSTANTS.GAMES)
-    players = pl.read_csv(CONSTANTS.PLAYERS)
-    plays = pl.read_csv(CONSTANTS.PLAYS, null_values=["NA"])
-    player_play = pl.read_csv(CONSTANTS.PLAYER_PLAY)
+    if args.raw or args.presnap:
+        path_games = 'data/raw/games.csv'
+        path_players = 'data/raw/players.csv'
+        path_plays = 'data/raw/plays.csv'
+        path_player_play = 'data/raw/player_play.csv'
 
-    plays_with_player_play = preprocess_plays(plays, player_play)
+        games = pl.read_csv(path_games, null_values=["NA"])
+        players = pl.read_csv(path_players, null_values=["NA"])
+        plays = pl.read_csv(path_plays, null_values=["NA"])
+        player_play = pl.read_csv(path_player_play, null_values=["NA"])
 
-    if args.process:
-        processed = []
+        games = preprocess_games(games)
+        players = preprocess_players(players)
+        plays = preprocess_plays(plays)
+        player_play = preprocess_player_play(player_play)
+
+        tracking = []
         for week in range(1, 10):
-            tracking = pl.read_csv(f"{CONSTANTS.INPUT}/tracking_week_{week}.csv", null_values=["NA"])
-            tracking = preprocess_tracking(tracking)
+            tracking_path = f"data/raw/tracking_week_{week}.csv"
+            tracking_week = pl.read_csv(tracking_path, null_values=["NA"])
+            tracking_week = preprocessing_tracking(tracking_week)
+            if args.presnap or args.presnap_OD:
+                tracking_week = get_presnap(tracking_week)
+            tracking.append(tracking_week)
 
-            processed_week = tracking.join(plays_with_player_play, on=['Id', 'nflId', 'gameId', 'playId'], how='left')
-            processed_week = (
-                processed_week
-                .join(games, on=['gameId'], how='left')
-                .join(players, on=['nflId', 'displayName'], how='left')
-            )
-            processed.append(processed_week)
+        tracking = pl.concat(tracking)
 
-        df_processed = pl.concat(processed)
-        df_processed = df_processed.filter(pl.col('yardsGained').is_not_null())
-        df_processed.write_csv(f"{CONSTANTS.OUTPUT}/processed.csv")
+        df = (
+            tracking
+            .join(games, on=['gameId'], how='left')
+            .join(players, on=['nflId'], how='left')
+            .join(plays, on=['gameId', 'playId'], how='left')
+            .join(player_play, on=['gameId', 'playId', 'nflId'], how='left')
+        )
 
-    if args.presnap:
-        presnap = []
-        for week in range(1, 10):
-            tracking = pl.read_csv(f"{CONSTANTS.INPUT}/tracking_week_{week}.csv", null_values=["NA"])
-            tracking = preprocess_tracking(tracking)
-            presnap_tracking = preprocess_presnap(tracking)
+        week = df.filter(pl.col("week") == 1)
+        if args.raw:
+            week.write_csv("data/outputs/processed_week.csv")
+            df.write_csv("data/outputs/processed.csv")
+        if args.presnap:
+            week.write_csv("data/outputs/presnap_week.csv")
+            df.write_csv("data/outputs/presnap.csv")
 
-            presnap_week = presnap_tracking.join(plays_with_player_play, on=['Id', 'nflId', 'gameId', 'playId'], how='left')
-            presnap_week = (
-                presnap_week
-                .join(games, on=['gameId'], how='left')
-                .join(players, on=['nflId', 'displayName'], how='left')
-            )
-            presnap.append(presnap_week)
+    if args.presnap_OD or args.raw_OD:
+        if args.raw_OD:
+            df = pl.read_csv("data/outputs/processed.csv", null_values=["NA"])
+        if args.presnap_OD:
+            df = pl.read_csv("data/outputs/presnap.csv", null_values=["NA"])
 
-        df_presnap = pl.concat(presnap)
-        df_presnap = df_presnap.filter(pl.col('yardsGained').is_not_null())
-        df_presnap.write_csv(f"{CONSTANTS.OUTPUT}/presnap.csv")
+        offense = df.filter(pl.col("club") != pl.col("defensiveTeam"))
+        defense = df.filter(pl.col("club") != pl.col("possessionfullTeam"))
+        offense_week = offense.filter(pl.col("week") == 1)
+        defense_week = defense.filter(pl.col("week") == 1)
+        if args.raw_OD:
+            offense.write_csv("data/outputs/processed_offense.csv")
+            defense.write_csv("data/outputs/processed_defense.csv")
+            offense_week.write_csv("data/outputs/processed_offense_week.csv")
+            defense_week.write_csv("data/outputs/processed_defense_week.csv")
+        if args.presnap_OD:
+            offense.write_csv("data/outputs/presnap_offense.csv")
+            defense.write_csv("data/outputs/presnap_defense.csv")
+            offense_week.write_csv("data/outputs/presnap_offense_week.csv")
+            defense_week.write_csv("data/outputs/presnap_defense_week.csv")
+
+    if args.tensors:
+        def create_frame_tensor(df):
+            def compute_relative_matrix(df, metric):
+                values = df.select(pl.col(metric)).to_numpy().flatten()
+                relative_matrix = values[:, None] - values
+                return relative_matrix
+            metrics = ['x', 'y', 's', 'a', 'dis', 'o', 'dir', 'xs', 'ys']
+            matrices = [compute_relative_matrix(df, metric) for metric in metrics]
+            stacked_matrix = np.stack(matrices, axis=-1)
+            tensor = torch.tensor(stacked_matrix, dtype=torch.float32)
+            return tensor
+
+        tensors = {}
+        for Id, frame_df in tracking.group_by(["Id"], maintain_order=True):
+            frame_df.sort(["Id", 'club', "position"])
+            tensors[Id] = create_frame_tensor(frame_df)
