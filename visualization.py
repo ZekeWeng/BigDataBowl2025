@@ -8,6 +8,7 @@ Original source: https://www.kaggle.com/code/nickwan/animate-plays-with-plotly-r
 """
 
 import plotly.graph_objects as go
+import polars as pl
 import numpy as np
 
 
@@ -123,29 +124,33 @@ Returns:
 """
 def animate_play(df):
     frames = []
-    sorted_frame_list = df.frameId.unique()
+    sorted_frame_list = df.select("frameId").unique().to_series().to_list()
     sorted_frame_list.sort()
 
     # Get color Combos
-    team_combos = list(set(df['club'].unique())-set(['football']))
-    color_orders = getColorPairs(team_combos[0],team_combos[1])
+    team_combos = list(set(df.select("club").unique().to_series().to_list()) - set(["football"]))
+    print(team_combos)
+    color_orders = getColorPairs(team_combos[0], team_combos[1])
 
     # Get general information
-    line_of_scrimmage = df['absoluteYardlineNumber'].values[0]
+    line_of_scrimmage = df.select("absoluteYardlineNumber")[0, 0]
 
     # Get First Down Marker
-    if df['playDirection'].values[0] == 'right':
-        first_down_marker = line_of_scrimmage + df['yardsToGo'].values[0]
+    play_direction = df.select("playDirection")[0, 0]
+    yards_to_go = df.select("yardsToGo")[0, 0]
+
+    if play_direction == 'right':
+        first_down_marker = line_of_scrimmage + yards_to_go
     else:
-        first_down_marker = line_of_scrimmage - df['yardsToGo'].values[0]
-    down = df['down'].values[0]
-    quarter = df['quarter'].values[0]
-    gameClock = df['gameClock'].values[0]
-    playDescription = df['playDescription'].values[0]
+        first_down_marker = line_of_scrimmage - yards_to_go
+    down = df.select("down")[0, 0]
+    quarter = df.select("quarter")[0, 0]
+    game_clock = df.select("gameClock")[0, 0]
+    play_description = df.select("playDescription")[0, 0]
 
     # Handle long play descriptions
-    if len(playDescription.split(" "))>15 and len(playDescription)>115:
-        playDescription = " ".join(playDescription.split(" ")[0:16]) + "<br>" + " ".join(playDescription.split(" ")[16:])
+    if len(play_description.split(" "))>15 and len(play_description)>115:
+        play_description = " ".join(play_description.split(" ")[0:16]) + "<br>" + " ".join(play_description.split(" ")[16:])
 
     updatemenus_dict = [
         {
@@ -252,8 +257,8 @@ def animate_play(df):
         )
 
         # Add Endzone Colors
-        endzoneColors = {0:color_orders[df['homeTeamAbbr'].values[0]][0],
-                        110:color_orders[df['visitorTeamAbbr'].values[0]][0]}
+        endzoneColors = {0:color_orders[df.select('homeTeamAbbr')[0, 0]][0],
+                        110:color_orders[df.select('visitorTeamAbbr')[0, 0]][0]}
         for x_min in [0,110]:
             data.append(
               go.Scatter(
@@ -273,41 +278,44 @@ def animate_play(df):
             )
 
         # Plot Players
-        for team in df['club'].unique():
-            plot_df = df.loc[(df['club']==team)
-                             & (df['frameId']==frameId)].copy()
+        for team in df.select("club").unique().to_series().to_list():
+            plot_df = df.filter((pl.col("club") == team) & (pl.col("frameId") == frameId))
 
             if team != 'football':
-                hover_text_array=[]
-
-                for nflId in plot_df['nflId'].unique():
-                    selected_player_df = plot_df.loc[plot_df['nflId']==nflId]
-                    nflId = int(selected_player_df['nflId'].values[0])
-                    displayName = selected_player_df['displayName'].values[0]
-                    s = round(selected_player_df['s'].values[0] * 2.23693629205, 3)
-                    text_to_append = f"nflId:{nflId}<br>displayName:{displayName}<br>Player Speed:{s} MPH"
+                hover_text_array = []
+                for nflId in plot_df.select("nflId").unique().to_series().to_list():
+                    selected_player_df = plot_df.filter(pl.col("nflId") == nflId)
+                    display_name = selected_player_df.select("displayName")[0, 0]
+                    speed = round(selected_player_df.select("s")[0, 0] * 2.23693629205, 3)
+                    text_to_append = f"nflId:{nflId}<br>displayName:{display_name}<br>Player Speed:{speed} MPH"
                     hover_text_array.append(text_to_append)
 
-                data.append(go.Scatter(x=plot_df['x'], y=plot_df['y'],
-                                mode = 'markers',
-                                marker=go.scatter.Marker(
-                                    color=color_orders[team][0],
-                                    line=go.scatter.marker.Line(width=2,
-                                    color=color_orders[team][1]),
-                                    size=10
-                                    ),
-                                name= team, hovertext=hover_text_array, hoverinfo='text'))
+                data.append(go.Scatter(
+                    x=plot_df.select("x").to_series().to_list(),
+                    y=plot_df.select("y").to_series().to_list(),
+                    mode="markers",
+                    marker=go.scatter.Marker(
+                        color=color_orders[team][0],
+                        line=go.scatter.marker.Line(width=2, color=color_orders[team][1]),
+                        size=10
+                    ),
+                    name=team,
+                    hovertext=hover_text_array,
+                    hoverinfo="text"
+                ))
             else:
-                data.append(go.Scatter(x=plot_df['x'], y=plot_df['y'],
-                                mode = 'markers',
-                                marker=go.scatter.Marker(
-                                    color=color_orders[team][0],
-                                    line=go.scatter.marker.Line(
-                                    width=2,
-                                    color=color_orders[team][1]),
-                                    size=10
-                                    ),
-                                name=team,hoverinfo='none'))
+                data.append(go.Scatter(
+                    x=plot_df.select("x").to_series().to_list(),
+                    y=plot_df.select("y").to_series().to_list(),
+                    mode="markers",
+                    marker=go.scatter.Marker(
+                        color=color_orders[team][0],
+                        line=go.scatter.marker.Line(width=2, color=color_orders[team][1]),
+                        size=10
+                    ),
+                    name=team,
+                    hoverinfo="none"
+                ))
 
         # Add frame to slider
         slider_step = {'args': [
@@ -336,7 +344,12 @@ def animate_play(df):
         plot_bgcolor='#00B140',
 
         # Create title and add play description
-        title=f"GameId: {df.iloc[0].gameId},PlayId: {df.iloc[0].playId}<br>{gameClock}{quarter}Q"+"<br>"*19+f"{playDescription}",
+        title = (
+            f"GameId: {df.select('gameId')[0, 0]}, "
+            f"PlayId: {df.select('playId')[0, 0]}<br>"
+            f"{game_clock}{quarter}Q" + "<br>" * 19 +
+            f"{play_description}"
+        ),
         updatemenus=updatemenus_dict,
         sliders = [sliders_dict]
     )
@@ -370,10 +383,10 @@ def animate_play(df):
     for x_min in [0,110]:
         if x_min == 0:
             angle = 270
-            teamName=df['homeTeamAbbr'].values[0]
+            teamName=df.select('homeTeamAbbr')[0,0]
         else:
             angle = 90
-            teamName=df['visitorTeamAbbr'].values[0]
+            teamName=df.select('visitorTeamAbbr')[0,0]
         fig.add_annotation(
           x=x_min+5,
           y=53.5/2,
