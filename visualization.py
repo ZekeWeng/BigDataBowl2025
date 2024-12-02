@@ -132,8 +132,11 @@ def animate_play(df):
     color_orders = getColorPairs(team_combos[0], team_combos[1])
 
     # Get general information
-    line_of_scrimmage = df.select("absoluteYardlineNumber").to_series()[0] + 10
 
+    if df.select("playDirection").to_series()[0]== 'right':
+        line_of_scrimmage = df.select("absoluteYardlineNumber").to_series()[0]
+    else:
+        line_of_scrimmage = df.select("absoluteYardlineNumber").to_series()[0] + 20
     # Get First Down Marker
     first_down_marker = line_of_scrimmage + df.select("yardsToGo").to_series()[0]
     down = df.select("down").to_series()[0]
@@ -338,7 +341,7 @@ def animate_play(df):
         plot_bgcolor='#00B140',
 
         # Create title and add play description
-        title = f"GameId: {df.select('gameId').to_series()[0]}, PlayId: {df.select('playId').to_series()[0]}<br>{df.select('gameClock').to_series()[0]}{df.select('quarter').to_series()[0]}Q<br>{'<br>' * 19}{df.select('playDescription').to_series()[0]}",
+        title = f"GameId: {df.select('gameId').to_series()[0]}, PlayId: {df.select('playId').to_series()[0]}<br>{quarter}Q {game_clock}{'<br>' * 19}{play_description}",
         updatemenus=updatemenus_dict,
         sliders = [sliders_dict]
     )
