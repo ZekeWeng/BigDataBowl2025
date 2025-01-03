@@ -7,81 +7,68 @@
 import polars as pl
 import math
 
-column_order = [
+schema = {
     # ID
-    "gameId",  # Game Identifier
-    "playId",  # Play Identifier
-    "frameId",  # Frame Identifier
-    "club",  # Team Club
-    "nflId",  # NFL Player Identifier
-    "displayName",  # Player Name
+    "gameId": pl.Int32,
+    "playId": pl.Int32,
+    "frameId": pl.Int32,
+    "club": pl.Categorical,
+    "nflId": pl.Int32,
+    "displayName": pl.Categorical,
 
     # Tracking
-    "x",  # X-coordinate
-    "y",  # Y-coordinate
-    "relative_x",  # Relative X-coordinate
-    "relative_y",  # Relative Y-coordinate
-    "xs",  # X-speed
-    "ys",  # Y-speed
-    "s",  # Speed
-    "a",  # Acceleration
-    "dis",  # Distance
-    "o",  # Orientation
-    "dir",  # Direction
+    "x": pl.Float32,
+    "y": pl.Float32,
+    "relative_x": pl.Float32,
+    "relative_y":  pl.Float32,
+    "xs":  pl.Float32,
+    "ys":  pl.Float32,
+    "s":  pl.Float32,
+    "xa":  pl.Float32,
+    "ya":  pl.Float32,
+    "a":  pl.Float32,
+    "dis":  pl.Float32,
+    "o":  pl.Float32,
+    "dir":  pl.Float32,
 
     # Context
-    "yardsGained",  # Yards Gained
-    "score_margin",  # Score Margin
-    "yardsToGo",  # Yards to Go
-    "yardsToGoCat",  # Categorized Yards to Go
-    "down",  # Down
-    "quarter",  # Quarter
-    "playDescription",  # Play Description
-    "absoluteYardlineNumber",  # Absolute Yardline Number
-    "gameClock",  # Game Clock
-    "playDirection",  # Play Direction
-    "week",  # Week
-    "time",  # Time of Play
+    "yardsGained":  pl.Float32,
+    "score_margin":  pl.Float32,
+    "yardsToGo": pl.Float32,
+    "down": pl.Int32,
+    "quarter": pl.Int32,
+    "playDescription": pl.String,
+    "absoluteYardlineNumber": pl.Int32,
+    "gameClock": pl.String,
+    "playDirection": pl.Categorical,
+    "week": pl.Int32,
+    "time": pl.String,
 
     # MISC
-    "event",  # Event
-    "possessionTeam",  # Possession Team
-    "defensiveTeam",  # Defensive Team
-    "frameType",  # Frame Type
+    "event": pl.Categorical,
+    "possessionTeam": pl.Categorical,
+    "defensiveTeam": pl.Categorical,
+    "frameType": pl.Categorical,
+    "homeTeamAbbr": pl.Categorical,
+    "visitorTeamAbbr": pl.Categorical,
 
     # Player
-    "position",  # Player Position
-    "height",  # Player Height
-    "weight",  # Player Weight
+    "position": pl.Categorical,
+    "height": pl.Categorical,
+    "weight": pl.Int32,
 
     # PFF
-    "pff_manZone",  # Man or Zone Coverage
-    "pff_passCoverage",  # pff's Pass Coverage
-    "passCoverage",  # Pass Coverage Type
-    "offensivePlay",  # Offensive Play Type
-    "inMotionAtBallSnap",  # In Motion at Ball Snap
-    "motionSinceLineset",  # Motion Since Line Set
-    "shiftSinceLineset",  # Shift Since Line Set
-    "pff_primaryDefensiveCoverageMatchupNflId",  # Primary Defensive Coverage Matchup
-    "pff_secondaryDefensiveCoverageMatchupNflId",  # Secondary Defensive Coverage Matchup
-    "wasTargettedReceiver",  # Targeted Receiver
-    "pff_defensiveCoverageAssignment",  # Defensive Coverage Assignment
-
-    # Offensive Positions
-    "QB",  # Quarterback
-    "RB",  # Running Back
-    "FB",  # Fullback
-    "WR",  # Wide Receiver
-    "TE",  # Tight End
-    "OL",   # Center + Guard + Tackle
-
-    # Defensive Positions
-    "DE",  # Defensive End
-    "DT",  # Defensive Tackle + Nose Tackle
-    "LB",  # Middle Linebacker + Outside Linebacker + Inside Linebacker
-    "CB",  # Cornerback + Defensive Back
-    "S",  # Free Safety + Strong Safety
-]
+    "pff_manZone": pl.Categorical,
+    "pff_passCoverage": pl.Categorical,
+    "defCoverage": pl.Categorical,
+    "runPass": pl.Categorical,
+    "inMotionAtBallSnap": pl.Int32,
+    "motionSinceLineset": pl.Int32,
+    "shiftSinceLineset": pl.Int32,
+    "pff_primaryDefensiveCoverageMatchupNflId": pl.Int32,
+    "pff_secondaryDefensiveCoverageMatchupNflId": pl.Int32,
+    "wasTargettedReceiver": pl.Int32,
+}
 
 files = {
     "games": "/Users/zekeweng/Dropbox/BigDataBowl/kaggle/games.csv",
@@ -103,90 +90,78 @@ def preprocess_games(df):
     return df.drop(['gameDate', 'gameTimeEastern', 'homeFinalScore', 'visitorFinalScore'])
 
 def preprocess_players(df):
-    df = df.with_columns(
-        pl
-        .when(pl.col("position") == "NT").then(pl.lit("DT"))
-        .when(pl.col("position") == "ILB").then(pl.lit("LB"))
-        .when(pl.col("position") == "MLB").then(pl.lit("LB"))
-        .when(pl.col("position") == "OLB").then(pl.lit("LB"))
-        .when(pl.col("position") == "FS").then(pl.lit("S"))
-        .when(pl.col("position") == "SS").then(pl.lit("S"))
-        .when(pl.col("position") == "DB").then(pl.lit("CB"))
-        .when(pl.col("position") == "C").then(pl.lit("OL"))
-        .when(pl.col("position") == "G").then(pl.lit("OL"))
-        .when(pl.col("position") == "T").then(pl.lit("OL"))
-        .otherwise(pl.col("position"))
-        .alias("position")
-    )
     return df.drop(['birthDate', 'collegeName', 'displayName'])
 
 def preprocess_plays(df):
     df = sort_id(df)
+    df = df.with_columns(
+        pl.col("qbSpike").fill_null(False).alias("qbSpike"),
+        pl.col("qbSneak").fill_null(False).alias("qbSneak"),
+        pl.col("qbKneel").cast(pl.Boolean).alias("qbKneel"),
+        pl.col("pff_runPassOption").cast(pl.Boolean).alias("pff_runPassOption"),
+    )
     df = df.filter(
-        (pl.col("qbSpike") != True) |
-        (pl.col("qbKneel") != True) |
-        (pl.col("qbSneak") != True) |
-        (pl.col('rushLocationType') == "UNKNOWN") |
-        (pl.col('passLocationType') == "UNKNOWN") |
-        (pl.col("pff_passCoverage").is_not_null())
-    ).with_columns([
-        pl.when(pl.col('rushLocationType') == "INSIDE_RIGHT").then(pl.lit("RUN_INSIDE_RIGHT"))
-         .when(pl.col('rushLocationType') == "INSIDE_LEFT").then(pl.lit("RUN_INSIDE_LEFT"))
-         .when(pl.col('rushLocationType') == "OUTSIDE_RIGHT").then(pl.lit("RUN_OUTSIDE_RIGHT"))
-         .when(pl.col('rushLocationType') == "OUTSIDE_LEFT").then(pl.lit("RUN_OUTSIDE_LEFT"))
-         .when(pl.col('passLocationType') == "INSIDE_BOX").then(pl.lit("PASS_MIDDLE"))
-         .when(pl.col('passLocationType') == "OUTSIDE_LEFT").then(pl.lit("PASS_OUTSIDE_LEFT"))
-         .when(pl.col('passLocationType') == "OUTSIDE_RIGHT").then(pl.lit("PASS_OUTSIDE_RIGHT"))
-         .otherwise(pl.lit("NA"))
-         .alias('offensivePlay')
-    ])
+            (pl.col("qbSpike") == False) &
+            (pl.col("qbKneel") == False) &
+            (pl.col("qbSneak") == False) &
+            (pl.col('pff_runPassOption') == False) &
+            (pl.col("pff_passCoverage").is_not_null())
+        )
+    # Redefining Run / Pass
+    df = df.with_columns(
+        pl.when(pl.col('rushLocationType').is_not_null())
+        .then(pl.lit("RUN"))
+        .when(pl.col('passLocationType').is_not_null())
+        .then(pl.lit("PASS"))
+        .otherwise(None)
+        .alias('runPass')
+    )
+    # Redefining defCoverage
     df = df.with_columns([
-        pl.when(pl.col('pff_runPassOption') == 1).then(pl.lit("RPO"))
-         .otherwise(pl.col('offensivePlay'))
-         .alias('offensivePlay'),
         pl.when(pl.col("pff_passCoverage") == "Cover-1 Double").then(pl.lit("Cover-1"))
-         .when(pl.col("pff_passCoverage").is_in(["Cover-3 Cloud Left", "Cover-3 Cloud Right", "Cover-3 Double Cloud", "Cover-3 Seam"])).then(pl.lit("Cover-3"))
-         .when(pl.col("pff_passCoverage").is_in(["Cover 6-Left", "Cover-6 Right"])).then(pl.lit("Cover-6"))
-         .when(pl.col("pff_passCoverage").is_in(["Miscellaneous", "None"])).then(pl.lit("Other"))
-         .otherwise(pl.col("pff_passCoverage"))
-         .alias("passCoverage")
-    ]).filter(
-        (pl.col("passCoverage").is_not_null()) &
-        (pl.col("offensivePlay").is_not_null()) &
-        (~pl.col("passCoverage").is_in(["Prevent", "Bracket", "Other"])) &
-        (pl.col("offensivePlay") != "NA")
-    ).with_columns(
-        pl.when(pl.col("yardsToGo") <= 3).then(pl.lit("Short"))
-         .when((pl.col("yardsToGo") >= 4) & (pl.col("yardsToGo") <= 8)).then(pl.lit("Medium"))
-         .when((pl.col("yardsToGo") >= 9) & (pl.col("yardsToGo") <= 12)).then(pl.lit("Long"))
-         .otherwise(pl.lit("Very Long"))
-         .alias("yardsToGoCat")
-    ).select([
-        "gameId", "playId", "playDescription", "quarter", "down", "yardsToGo", "yardsToGoCat",
+            .when(pl.col("pff_passCoverage").is_in(["Cover-3 Cloud Left", "Cover-3 Cloud Right", "Cover-3 Double Cloud", "Cover-3 Seam"])).then(pl.lit("Cover-3"))
+            .when(pl.col("pff_passCoverage").is_in(["Cover 6-Left", "Cover-6 Right"])).then(pl.lit("Cover-6"))
+            .when(pl.col("pff_passCoverage").is_in(["Bracket", "2-Man", "Goal Line", "Miscellaneous", "None", "Prevent", "Red Zone"])).then(None)
+            .otherwise(pl.col("pff_passCoverage"))
+            .alias("defCoverage")
+    ])
+    # Cut Nones
+    df = df.filter(
+        (pl.col("defCoverage").is_not_null()) &
+        (pl.col("runPass").is_not_null())
+    )
+    # Creating
+    df = df.select([
+        "gameId", "playId", "playDescription", "quarter", "down", "yardsToGo",
         "possessionTeam", "defensiveTeam", "preSnapHomeScore", "preSnapVisitorScore",
-        "offensivePlay", "passCoverage", "pff_passCoverage", "pff_manZone", "absoluteYardlineNumber", "gameClock",
+        "runPass", "defCoverage", "pff_passCoverage", "pff_manZone", "absoluteYardlineNumber", "gameClock",
         "yardsGained"
     ])
     return df
+
 
 def preprocess_player_play(df):
     df = sort_id(df)
     df = df.with_columns([
         pl.when(pl.col("inMotionAtBallSnap") == True)
-        .then(0)
+        .then(1)
         .otherwise(0)
+        .cast(pl.Int64)
         .alias("inMotionAtBallSnap"),
         pl.when(pl.col("motionSinceLineset") == True)
-        .then(0)
+        .then(1)
         .otherwise(0)
+        .cast(pl.Int64)
         .alias("motionSinceLineset"),
         pl.when(pl.col("shiftSinceLineset") == True)
-        .then(0)
+        .then(1)
         .otherwise(0)
+        .cast(pl.Int64)
         .alias("shiftSinceLineset"),
-        pl.when(pl.col("pff_primaryDefensiveCoverageMatchupNflId").is_null())
-        .then(0)
-        .otherwise(pl.col("pff_primaryDefensiveCoverageMatchupNflId"))
+        pl.when(pl.col("pff_primaryDefensiveCoverageMatchupNflId").is_not_null())
+        .then(pl.col("pff_primaryDefensiveCoverageMatchupNflId"))
+        .otherwise(-1)
+        .cast(pl.Int64)
         .alias("pff_primaryDefensiveCoverageMatchupNflId")
     ])
     columns_to_keep = [
@@ -231,7 +206,9 @@ def preprocessing_tracking(df):
         (pl.col("x") - pl.col("x_football")).alias("relative_x"),
         (pl.col("y") - pl.col("y_football")).alias("relative_y"),
         ((pl.col('dir').cast(float) * math.pi / 180).cos() * pl.col('s')).alias('xs'),
-        ((pl.col('dir').cast(float) * math.pi / 180).sin() * pl.col('s')).alias('ys')
+        ((pl.col('dir').cast(float) * math.pi / 180).sin() * pl.col('s')).alias('ys'),
+        ((pl.col('dir').cast(float) * math.pi / 180).cos() * pl.col('a')).alias('xa'),
+        ((pl.col('dir').cast(float) * math.pi / 180).sin() * pl.col('a')).alias('ya')
     ]).with_columns([
         pl.col("o").fill_null(0),
         pl.col("dir").fill_null(0),
@@ -245,11 +222,10 @@ def cut_and_trim(df):
         df
         .group_by(["gameId", "playId"])
         .agg(pl.col("frameId").max().alias("max_frameId"))
-        .filter(pl.col("max_frameId") < 250)
+        .filter(pl.col("max_frameId") <= 256)
     )
 
     df = df.join(df_frame_limit, on=["gameId", "playId"], how="inner")
-    df = df.filter(pl.col("frameId") % 2 == 1)
     return df
 
 def create_position_count(df):
@@ -262,7 +238,7 @@ def create_position_count(df):
     ).fill_null(0)
     return df.join(position_counts, on=['gameId', 'playId', 'frameId'], how='inner')
 
-def preprocess(week, games, players, plays, player_play):
+def preprocess(week, df_plays):
     tracking_week = pl.read_csv(get_file(f"tracking_{week}"), null_values=["NA"])
     df = preprocessing_tracking(tracking_week)
 
@@ -271,11 +247,7 @@ def preprocess(week, games, players, plays, player_play):
         df = cut_and_trim(df)
 
     df = (
-        df
-        .join(plays, on=['gameId', 'playId'], how='left')
-        .join(player_play, on=['gameId', 'playId', 'nflId'], how='left')
-        .join(players, on=['nflId'], how='left')
-        .join(games, on=['gameId'], how='left')
+        df.join(df_plays, on=['gameId', 'playId', 'nflId'], how='inner')
     )
     df = (
         df.with_columns(
@@ -292,7 +264,7 @@ def preprocess(week, games, players, plays, player_play):
         )
     )
     df = create_position_count(df)
-    df = df.select(column_order)
+    df = df.select(schema.keys())
 
     return df
 
@@ -323,6 +295,13 @@ if __name__ == "__main__":
     plays = preprocess_plays(pl.read_csv(get_file("plays"), null_values=["NA"]))
     player_play = preprocess_player_play(pl.read_csv(get_file("player_play"), null_values=["NA"]))
 
+    df_plays = (
+        plays
+        .join(player_play, on=['gameId', 'playId'], how='left')
+        .join(players, on=['nflId'], how='left')
+        .join(games, on=['gameId'], how='left')
+    )
+
     for week in range(1,10):
-        df = preprocess(week, games, players, plays, player_play)
+        df = preprocess(week, df_plays)
         write_outputs(df, f"week_{week}")
