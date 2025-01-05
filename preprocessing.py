@@ -56,6 +56,7 @@ schema = {
     "position": pl.Categorical,
     "height": pl.Categorical,
     "weight": pl.Int32,
+    "jerseyNumber": pl.Int32,
 
     # PFF
     "pff_manZone": pl.Categorical,
@@ -120,8 +121,8 @@ def preprocess_plays(df):
     df = df.with_columns([
         pl.when(pl.col("pff_passCoverage") == "Cover-1 Double").then(pl.lit("Cover-1"))
             .when(pl.col("pff_passCoverage").is_in(["Cover-3 Cloud Left", "Cover-3 Cloud Right", "Cover-3 Double Cloud", "Cover-3 Seam"])).then(pl.lit("Cover-3"))
-            .when(pl.col("pff_passCoverage").is_in(["Cover 6-Left", "Cover-6 Right"])).then(pl.lit("Cover-6"))
-            .when(pl.col("pff_passCoverage").is_in(["Bracket", "2-Man", "Goal Line", "Miscellaneous", "None", "Prevent", "Red Zone"])).then(None)
+            # .when(pl.col("pff_passCoverage").is_in(["Cover 6-Left", "Cover-6 Right"])).then(pl.lit("Cover-6"))
+            .when(pl.col("pff_passCoverage").is_in(["2-Man", "Bracket", "Cover-0", "Cover 6-Left", "Cover-6 Right", "Goal Line", "Miscellaneous", "None", "Prevent", "Red Zone"])).then(None)
             .otherwise(pl.col("pff_passCoverage"))
             .alias("defCoverage")
     ])
@@ -138,7 +139,6 @@ def preprocess_plays(df):
         "yardsGained"
     ])
     return df
-
 
 def preprocess_player_play(df):
     df = sort_id(df)
@@ -160,7 +160,7 @@ def preprocess_player_play(df):
         .alias("shiftSinceLineset"),
         pl.when(pl.col("pff_primaryDefensiveCoverageMatchupNflId").is_not_null())
         .then(pl.col("pff_primaryDefensiveCoverageMatchupNflId"))
-        .otherwise(-1)
+        .otherwise(0)
         .cast(pl.Int64)
         .alias("pff_primaryDefensiveCoverageMatchupNflId")
     ])
@@ -214,7 +214,9 @@ def preprocessing_tracking(df):
         pl.col("dir").fill_null(0),
         pl.col("xs").fill_null(0),
         pl.col("ys").fill_null(0),
-    ]).drop(["jerseyNumber"]).filter(pl.col("displayName") != "football")
+    ])
+    if PRESNAP:
+        df = df.filter(pl.col("displayName") != "football")
     return df
 
 def cut_and_trim(df):
@@ -228,27 +230,18 @@ def cut_and_trim(df):
     df = df.join(df_frame_limit, on=["gameId", "playId"], how="inner")
     return df
 
-def create_position_count(df):
-    position_counts = df.with_columns(pl.lit(1).alias("count"))
-    position_counts = position_counts.pivot(
-        values="count",
-        index=["gameId", "playId", "frameId"],
-        on="position",
-        aggregate_function="sum",
-    ).fill_null(0)
-    return df.join(position_counts, on=['gameId', 'playId', 'frameId'], how='inner')
-
 def preprocess(week, df_plays):
     tracking_week = pl.read_csv(get_file(f"tracking_{week}"), null_values=["NA"])
     df = preprocessing_tracking(tracking_week)
 
     if PRESNAP:
-        df = df.filter(pl.col("frameType") != "AFTER_SNAP")
+        df = df.filter(pl.col("frameType") == "BEFORE_SNAP")
         df = cut_and_trim(df)
-
-    df = (
-        df.join(df_plays, on=['gameId', 'playId', 'nflId'], how='inner')
-    )
+        df = (
+            df.join(df_plays, on=['gameId', 'playId', 'nflId'], how='inner')
+        )
+    else:
+        df = (df.join(df_plays, on=['gameId', 'playId', 'nflId'], how='left'))
     df = (
         df.with_columns(
             pl.when(pl.col('homeTeamAbbr') == pl.col('club'))
@@ -263,7 +256,23 @@ def preprocess(week, df_plays):
             .alias('absoluteYardlineNumber'),
         )
     )
-    df = create_position_count(df)
+    zone_filter = (
+        df.filter(
+            (pl.col("pff_manZone") == "Zone") &
+            (pl.col("inMotionAtBallSnap") == 0) &
+            (pl.col("motionSinceLineset") == 0) &
+            (pl.col("shiftSinceLineset") == 0))
+        .group_by(["gameId", "playId"], maintain_order=True)
+            .agg(pl.col("frameId")
+            .max()
+            .alias("playLength"))
+    )
+    zone_removal_ids = zone_filter.filter(pl.col("playLength") <= 100).select(["gameId", "playId"])
+    df = df.join(
+        zone_removal_ids,
+        on=["gameId", "playId"],
+        how="anti"
+    )
     df = df.select(schema.keys())
 
     return df
