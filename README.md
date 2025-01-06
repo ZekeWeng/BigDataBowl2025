@@ -1,3 +1,6 @@
+
+# References
+
 H. Song, M. Al Jazaery, H. Ding, L. Chong, J. Jung, M. Band, M. Chi, and T. Bliss, “Explainable Defense Coverage Classification in NFL Games using Deep Neural Networks,” Amazon Science, https://www.amazon.science/publications/explainable-defense-coverage-classification-in-nfl-games-using-deep-neural-networks (accessed Jan. 6, 2025).
  
 B. Baldwin, “Computer Vision with NFL Player Tracking Data using torch for R,” Open Source Football, https://opensourcefootball.com/posts/2021-05-31-computer-vision-in-r-using-torch/ (accessed Jan. 6, 2025). 
