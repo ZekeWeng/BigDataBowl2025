@@ -23,9 +23,9 @@ schema = {
     "relative_y":  pl.Float32,
     "xs":  pl.Float32,
     "ys":  pl.Float32,
-    "s":  pl.Float32,
     "xa":  pl.Float32,
     "ya":  pl.Float32,
+    "s":  pl.Float32,
     "a":  pl.Float32,
     "dis":  pl.Float32,
     "o":  pl.Float32,
@@ -43,6 +43,7 @@ schema = {
     "playDirection": pl.Categorical,
     "week": pl.Int32,
     "time": pl.String,
+    "expectedPointsAdded": pl.Float32,
 
     # MISC
     "event": pl.Categorical,
@@ -66,17 +67,11 @@ schema = {
     "inMotionAtBallSnap": pl.Int32,
     "motionSinceLineset": pl.Int32,
     "shiftSinceLineset": pl.Int32,
-    "pff_primaryDefensiveCoverageMatchupNflId": pl.Int32,
-    "pff_secondaryDefensiveCoverageMatchupNflId": pl.Int32,
-    "wasTargettedReceiver": pl.Int32,
+    # "pff_primaryDefensiveCoverageMatchupNflId": pl.Int32,
+    # "pff_secondaryDefensiveCoverageMatchupNflId": pl.Int32,
+    # "wasTargettedReceiver": pl.Int32,
 }
 
-files = {
-    "games": "/Users/zekeweng/Dropbox/BigDataBowl/kaggle/games.csv",
-    "players": "/Users/zekeweng/Dropbox/BigDataBowl/kaggle/players.csv",
-    "plays": "/Users/zekeweng/Dropbox/BigDataBowl/kaggle/plays.csv",
-    "player_play": "/Users/zekeweng/Dropbox/BigDataBowl/kaggle/player_play.csv",
-}
 
 def sort_id(df):
     return df.with_columns(
@@ -136,7 +131,7 @@ def preprocess_plays(df):
         "gameId", "playId", "playDescription", "quarter", "down", "yardsToGo",
         "possessionTeam", "defensiveTeam", "preSnapHomeScore", "preSnapVisitorScore",
         "runPass", "defCoverage", "pff_passCoverage", "pff_manZone", "absoluteYardlineNumber", "gameClock",
-        "yardsGained"
+        "yardsGained", "expectedPointsAdded"
     ])
     return df
 
@@ -217,14 +212,42 @@ def preprocessing_tracking(df):
     ])
     if PRESNAP:
         df = df.filter(pl.col("displayName") != "football")
+
+        ls = df.group_by(["gameId", "playId"], maintain_order=True).agg(
+            (pl.col("event") == "line_set").any().cast(pl.Int32).alias("contains_lineset")
+        )
+        ls = ls.join(df, on=["gameId", "playId"], how="left")
+        lsa = ls.group_by(["gameId", "playId", "frameId"], maintain_order=True).agg(
+            (pl.col("event") == "line_set").any().cast(pl.Int32).alias("lineset")
+        )
+        lsa = lsa.with_columns(
+            pl.col("lineset").cum_sum().over(["gameId", "playId"]).alias("lineset_cs")
+        ).filter(
+            pl.col("lineset_cs") < 1
+        ).select(["gameId", "playId", "frameId"])
+        mf = df.group_by(("gameId", "playId", "frameId"), maintain_order=True).agg(pl.count())
+        mff = mf.group_by(("gameId", "playId"), maintain_order=True).agg(pl.col("frameId").n_unique())
+        mff = mf.filter(pl.col("frameId") <= 10).select(["gameId", "playId", "frameId"])
+
+        df = df.join(
+            lsa,
+            on=["gameId", "playId", "frameId"],
+            how="anti"
+        )
+        df = df.join(
+            mff,
+            on=["gameId", "playId", "frameId"],
+            how="anti"
+        )
+        df = df.sort("gameId", "playId", "frameId")
     return df
 
 def cut_and_trim(df):
     df_frame_limit = (
         df
         .group_by(["gameId", "playId"])
-        .agg(pl.col("frameId").max().alias("max_frameId"))
-        .filter(pl.col("max_frameId") <= 256)
+        .agg(pl.col("frameId").n_unique().alias("max_frameId"))
+        .filter(pl.col("max_frameId") <= 128)
     )
 
     df = df.join(df_frame_limit, on=["gameId", "playId"], how="inner")
@@ -236,7 +259,6 @@ def preprocess(week, df_plays):
 
     if PRESNAP:
         df = df.filter(pl.col("frameType") == "BEFORE_SNAP")
-        df = cut_and_trim(df)
         df = (
             df.join(df_plays, on=['gameId', 'playId', 'nflId'], how='inner')
         )
@@ -264,15 +286,16 @@ def preprocess(week, df_plays):
             (pl.col("shiftSinceLineset") == 0))
         .group_by(["gameId", "playId"], maintain_order=True)
             .agg(pl.col("frameId")
-            .max()
+            .n_unique()
             .alias("playLength"))
     )
-    zone_removal_ids = zone_filter.filter(pl.col("playLength") <= 100).select(["gameId", "playId"])
+    zone_removal_ids = zone_filter.filter(pl.col("playLength") <= 10).select(["gameId", "playId"])
     df = df.join(
         zone_removal_ids,
         on=["gameId", "playId"],
         how="anti"
     )
+    df = cut_and_trim(df)
     df = df.select(schema.keys())
 
     return df
@@ -283,9 +306,9 @@ def get_file(data):
 
 def write_outputs(df, file_name):
     if PRESNAP:
-        path = f"/Users/zekeweng/Dropbox/BigDataBowl/presnap/{file_name}.csv"
+        path =
     else:
-        path = f"/Users/zekeweng/Dropbox/BigDataBowl/plays/{file_name}.csv"
+        path =
     df.write_csv(path)
     print(f"Wrote {path}")
 
@@ -297,7 +320,7 @@ if __name__ == "__main__":
     PRESNAP = args.presnap
 
     for week in range(1, 10):
-        files[f"tracking_{week}"] = f"/Users/zekeweng/Dropbox/BigDataBowl/kaggle/tracking_week_{week}.csv"
+        files[f"tracking_{week}"] =
 
     games = preprocess_games(pl.read_csv(get_file("games"), null_values=["NA"]))
     players = preprocess_players(pl.read_csv(get_file("players"), null_values=["NA"]))

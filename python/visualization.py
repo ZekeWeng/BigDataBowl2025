@@ -10,6 +10,8 @@ Original source: https://www.kaggle.com/code/nickwan/animate-plays-with-plotly-r
 import plotly.graph_objects as go
 import polars as pl
 import numpy as np
+from typing import Dict, Tuple
+import matplotlib.pyplot as plt
 
 
 COLORS = {
@@ -59,12 +61,11 @@ Params:
 Returns:
 - The color distance between the two colors.
 """
-def getColorSimilarity(hex1, hex2):
+def getColorSimilarity(hex1, hex2) -> int:
     """
     Helper Method: Converts a hex color to an RGB tuple.
     """
-    def get_rgb(color):
-        # return np.array(tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)))
+    def get_rgb(color: str) -> Tuple[int, int, int]:
         return tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
 
     if hex1 == hex2:
@@ -122,7 +123,7 @@ Params:
 Returns:
 - Visualization of the specific play
 """
-def animate_play(df):
+def animate_play(df: pl.DataFrame) -> plt.Figure:
     frames = []
     sorted_frame_list = df.select("frameId").unique().to_series().to_list()
     sorted_frame_list.sort()

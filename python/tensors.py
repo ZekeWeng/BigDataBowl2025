@@ -2,23 +2,22 @@ import polars as pl
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
-import utils
+import preprocessing.utils as utils
 
 mappings = {
     "pff_manZone": {
         "Zone": 0, "Man": 1
     },
     "defCoverage": {
-        "Cover-0": 0, "Cover-1": 1, "Cover-2": 2, "Cover-3": 3, "Cover-6": 4,
-        "Quarters": 5,
+        "Cover-1": 0, "Cover-2": 1, "Cover-3": 2, "Quarters": 3,
     },
     "runPass": {
         "RUN": 0, "PASS": 1
     }
 }
 
-class BigDataBowlDatasetFeatures(Dataset):
-    def __init__(self, df: pl.DataFrame, fra_features, max_frames=256):
+class BigDataBowlDatasetFeaturesOffense(Dataset):
+    def __init__(self, df: pl.DataFrame, fra_features, max_frames=128):
         self.max_frames = max_frames
         self.fra_features = fra_features
         self.df = df
@@ -57,7 +56,6 @@ class BigDataBowlDatasetFeatures(Dataset):
 
             combined_np = np.concatenate([
                 offense_expanded,
-                defense_expanded,
                 relative_np],
                 axis=-1)                                                        # [11, 11, #features*3]
             combined_np = np.moveaxis(combined_np, -1, 0)                       # [#features*3, 11, 11]
@@ -76,8 +74,64 @@ class BigDataBowlDatasetFeatures(Dataset):
 
         return play_tensor
 
+class BigDataBowlDatasetFeaturesDefense(Dataset):
+    def __init__(self, df: pl.DataFrame, fra_features, max_frames=128):
+        self.max_frames = max_frames
+        self.fra_features = fra_features
+        self.df = df
+
+        grouped = (
+            df.group_by(["gameId", "playId"], maintain_order=True)
+                .agg([
+                    pl.count("gameId").alias("row_count"),
+                ])
+            )
+        grouped = grouped.filter(pl.col("row_count") % 22 == 0)
+
+        self.valid_groups = [tuple(row) for row in grouped.select(["gameId", "playId"]).to_numpy()]
+
+    def __len__(self):
+        return len(self.valid_groups)
+
+    def __getitem__(self, idx):
+        game_id, play_id = self.valid_groups[idx]
+
+        play_df = self.df.filter(
+            (pl.col("gameId") == game_id) & (pl.col("playId") == play_id)
+        )
+
+        frames = []
+        for _, df_frame in play_df.group_by("frameId", maintain_order=True):
+            offense_df = df_frame.filter(pl.col("club") == pl.col("possessionTeam"))
+            defense_df = df_frame.filter(pl.col("club") == pl.col("defensiveTeam"))
+
+            offense_np = offense_df.select(self.fra_features).to_numpy()        # [11, #features]
+            defense_np = defense_df.select(self.fra_features).to_numpy()        # [11, #features]
+
+            offense_expanded = offense_np[:, None, :].repeat(11, axis=1)        # [11, 11, #features]
+            defense_expanded = defense_np[None, :, :].repeat(11, axis=0)        # [11, 11, #features]
+            relative_np = offense_expanded - defense_expanded                   # [11, 11, #features]
+
+            combined_np = np.concatenate([
+                defense_expanded,
+                relative_np],
+                axis=-1)                                                        # [11, 11, #features*3]
+            combined_np = np.moveaxis(combined_np, -1, 0)                       # [#features*3, 11, 11]
+
+            frames.append(torch.tensor(combined_np, dtype=torch.float32))
+
+        f, p, p = frames[0].shape                                               # [#features, 11, 11]
+
+        play_shape = (self.max_frames, f, p, p)
+        play_tensor = torch.full(play_shape, -1e9, dtype=torch.float32)
+
+        for i in range(min(len(frames), self.max_frames)):
+            play_tensor[i] = frames[i]
+
+        return play_tensor
+
 class BigDataBowlDatasetLabels(Dataset):
-    def __init__(self, df: pl.DataFrame, label_col: str, max_frames: int = 256):
+    def __init__(self, df: pl.DataFrame, label_col: str, max_frames: int = 128):
         self.max_frames = max_frames
         grouped = (
             df.group_by(["gameId", "playId"], maintain_order=True)
@@ -103,7 +157,7 @@ class BigDataBowlDatasetLengths(Dataset):
             df.group_by(["gameId", "playId"], maintain_order=True)
               .agg([
                   pl.count("gameId").alias("row_count"),
-                  pl.col("frameId").max().alias("numFrames"),
+                  pl.col("frameId").n_unique().alias("numFrames"),
               ])
         )
 
@@ -126,8 +180,12 @@ def save_dataset(dataset: Dataset, file_path: str, batch_size=128):
 
     all_labs = torch.cat(all_labs, dim=0)
 
+    if all_labs.dtype not in (torch.float32, torch.float64, torch.int32, torch.int64, torch.uint8):
+        print(f"Unsupported dtype detected ({all_labs.dtype}), converting to torch.int64.")
+        all_labs = all_labs.to(torch.int64)
+
     torch.save(all_labs, file_path)
-    print(f"Saved label dataset to {file_path}, shape={all_labs.shape}")
+    print(f"Saved tensor to {file_path}, shape={all_labs.shape}")
 
 if __name__ == "__main__":
     keys = ["week", "gameId", "playId", "frameId"]
@@ -151,18 +209,38 @@ if __name__ == "__main__":
           .alias(col_name)
           .cast(pl.Float32)
         for col_name in label_cols
-    ])
+    ]).sort(["gameId", "playId", "frameId"])
 
     df_train = df.filter(pl.col("week") <= 7)
     df_val   = df.filter(pl.col("week") == 8)
     df_test  = df.filter(pl.col("week") == 9)
 
     batch_size = 128
-    max_frames = 256
+    max_frames = 128
+
+    ## Features
+    path = f"{utils.tensors}/Model/Features/"
+
+    val_dataset = BigDataBowlDatasetFeaturesDefense(df_val, fra_features=frame_cols, max_frames=max_frames)
+    save_dataset(val_dataset, f"{path}features_val_defense.pt", batch_size=batch_size)
+
+    test_dataset = BigDataBowlDatasetFeaturesDefense(df_test, fra_features=frame_cols, max_frames=max_frames)
+    save_dataset(test_dataset, f"{path}features_test_defense.pt", batch_size=batch_size)
+
+    train_dataset = BigDataBowlDatasetFeaturesDefense(df_train, fra_features=frame_cols, max_frames=max_frames)
+    save_dataset(train_dataset, f"{path}features_train_defense.pt", batch_size=batch_size)
+
+    val_dataset = BigDataBowlDatasetFeaturesOffense(df_val, fra_features=frame_cols, max_frames=max_frames)
+    save_dataset(val_dataset, f"{path}features_val_offense.pt", batch_size=batch_size)
+
+    test_dataset = BigDataBowlDatasetFeaturesOffense(df_test, fra_features=frame_cols, max_frames=max_frames)
+    save_dataset(test_dataset, f"{path}features_test_offense.pt", batch_size=batch_size)
+
+    train_dataset = BigDataBowlDatasetFeaturesOffense(df_train, fra_features=frame_cols, max_frames=max_frames)
+    save_dataset(train_dataset, f"{path}features_train_offense.pt", batch_size=batch_size)
 
     ### Labels
-
-    path = f"{utils.tensors}/Labels/"
+    path = f"{utils.tensors}/Model/Labels/"
     for name_col in label_cols:
         val_dataset = BigDataBowlDatasetLabels(df_val, label_col=name_col, max_frames=max_frames)
         save_dataset(val_dataset, f"{path}{name_col}_val.pt", batch_size=batch_size)
@@ -184,16 +262,3 @@ if __name__ == "__main__":
 
     train_dataset = BigDataBowlDatasetLengths(df_train)
     save_dataset(train_dataset, f"{path}lengths_train.pt", batch_size=batch_size)
-
-
-    ### Features
-
-    path = f"{utils.tensors}/Model/Features/"
-    val_dataset = BigDataBowlDatasetFeatures(df_val, fra_features=frame_cols, max_frames=max_frames)
-    save_dataset(val_dataset, f"{path}features_val.pt", batch_size=batch_size)
-
-    test_dataset = BigDataBowlDatasetFeatures(df_test, fra_features=frame_cols, max_frames=max_frames)
-    save_dataset(test_dataset, f"{path}features_test.pt", batch_size=batch_size)
-
-    train_dataset = BigDataBowlDatasetFeatures(df_train, fra_features=frame_cols, max_frames=max_frames)
-    save_dataset(train_dataset, f"{path}features_train.pt", batch_size=batch_size)
